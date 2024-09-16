@@ -1,9 +1,12 @@
 'use client'
 
+import React from 'react';  // Lägg till denna rad
 import { Button } from "@/components/ui/button"
 import { Plus } from "lucide-react"
 import { Bricolage_Grotesque } from 'next/font/google'
 import { useState, useRef, useEffect } from 'react'
+import { AnimatedList, AnimatedListItem } from "@/components/magicui/animated-list";
+import { motion, AnimatePresence } from "framer-motion";
 
 const bricolage = Bricolage_Grotesque({ subsets: ['latin'] })
 
@@ -19,11 +22,11 @@ const initialColumns = [
       </svg>
     ),
     tasks: [
-      { title: "Design new landing page", description: "Create a modern and engaging landing page for our product launch. This should include responsive design, optimized images, and clear call-to-action buttons. Coordinate with the marketing team to ensure brand consistency and messaging alignment.", time: "8h" },
-      { description: "Review and update the user guide for the latest software release. Focus on new features and any changes to existing functionality.", time: "3h" },
-      { title: "Bug fix: login issue", description: "Investigate and resolve the intermittent login problem reported by users.", time: "1h" },
-      { title: "Prepare Q3 report", description: "Compile and analyze data for the quarterly report. Include key performance indicators, revenue trends, and project milestones.", time: "4h" },
-      { description: "Team meeting to discuss project priorities and resource allocation for the upcoming sprint.", time: "1h" },
+      { title: "Design new landing page", description: "Create a modern and engaging landing page for our product launch. This should include responsive design, optimized images, and clear call-to-action buttons. Coordinate with the marketing team to ensure brand consistency and messaging alignment." },
+      { description: "Review and update the user guide for the latest software release. Focus on new features and any changes to existing functionality." },
+      { title: "Bug fix: login issue", description: "Investigate and resolve the intermittent login problem reported by users." },
+      { title: "Prepare Q3 report", description: "Compile and analyze data for the quarterly report. Include key performance indicators, revenue trends, and project milestones." },
+      { description: "Team meeting to discuss project priorities and resource allocation for the upcoming sprint." },
     ]
   },
   { 
@@ -62,21 +65,169 @@ const initialColumns = [
   }
 ]
 
+// Lägg till dessa typdefinitioner i början av filen
+interface Task {
+  title: string;
+  description: string;
+  isNew?: boolean;
+  key?: number;
+  time?: string;
+}
+
+interface TaskCardProps {
+  task: Task;
+  columnIndex: number;
+  taskIndex: number;
+  updateTask: (columnIndex: number, taskIndex: number, field: 'title' | 'description', value: string) => void;
+  saveTask: (columnIndex: number, taskIndex: number) => void;
+  startEditing: (columnIndex: number, taskIndex: number, field: 'title' | 'description') => void;
+  handleBlur: () => void;
+  adjustTextareaHeight: (textarea: HTMLTextAreaElement) => void;
+  adjustInputHeight: (input: HTMLInputElement) => void;
+  titleInputRef: React.RefObject<HTMLInputElement>;
+  textareaRef: React.RefObject<HTMLTextAreaElement>;
+  editingTask: { columnIndex: number; taskIndex: number; field: 'title' | 'description' | null };
+  textColor: string;
+  bodyTextColor?: string;
+  buttonBg: string;
+}
+
+const container = {
+  hidden: { opacity: 1, scale: 0 },
+  visible: {
+    opacity: 1,
+    scale: 1,
+    transition: {
+      delayChildren: 0.3,
+      staggerChildren: 0.2
+    }
+  }
+};
+
+const item = {
+  hidden: { y: 20, opacity: 0 },
+  visible: {
+    y: 0,
+    opacity: 1
+  }
+};
+
+const saveButtonAnimation = {
+  initial: { scale: 0.8, opacity: 0 },
+  animate: { scale: 1, opacity: 1 },
+  exit: { scale: 0.8, opacity: 0 },
+  transition: { duration: 0.2 }
+};
+
+// Uppdatera TaskCard-funktionen för att använda den nya typen
+function TaskCard({ task, columnIndex, taskIndex, updateTask, saveTask, startEditing, handleBlur, adjustTextareaHeight, adjustInputHeight, titleInputRef, textareaRef, editingTask, textColor, bodyTextColor, buttonBg }: TaskCardProps) {
+  const [cardHeight, setCardHeight] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (cardHeight === null) {
+      setCardHeight(document.getElementById(`task-card-${columnIndex}-${taskIndex}`)?.offsetHeight || null);
+    }
+  }, [cardHeight, columnIndex, taskIndex]);
+
+  return (
+    <div 
+      id={`task-card-${columnIndex}-${taskIndex}`}
+      className="bg-white rounded-xl p-3 mb-3 flex flex-col relative"
+      style={{ minHeight: cardHeight ? `${cardHeight}px` : '120px' }}
+    >
+      <div className="flex-grow flex flex-col">
+        <div className="mb-2">
+          {task.isNew || (editingTask.columnIndex === columnIndex && editingTask.taskIndex === taskIndex && editingTask.field === 'title') ? (
+            <textarea
+              ref={titleInputRef as React.RefObject<HTMLTextAreaElement>}
+              value={task.title}
+              onChange={(e) => {
+                updateTask(columnIndex, taskIndex, 'title', e.target.value);
+                adjustTextareaHeight(e.target);
+              }}
+              onBlur={() => handleBlur()}
+              placeholder="Task title"
+              className="text-xl font-bold w-full outline-none break-words bg-transparent resize-none overflow-hidden pr-20"
+              style={{ color: textColor, overflowWrap: 'break-word', wordWrap: 'break-word' }}
+              rows={1}
+            />
+          ) : (
+            <h2 className="text-xl font-bold break-words pr-20" style={{ color: textColor, overflowWrap: 'break-word', wordWrap: 'break-word' }} onClick={() => startEditing(columnIndex, taskIndex, 'title')}>
+              {task.title || "Untitled"}
+            </h2>
+          )}
+        </div>
+        <div className="flex-grow">
+          {task.isNew || (editingTask.columnIndex === columnIndex && editingTask.taskIndex === taskIndex && editingTask.field === 'description') ? (
+            <textarea
+              ref={textareaRef}
+              value={task.description}
+              onChange={(e) => {
+                updateTask(columnIndex, taskIndex, 'description', e.target.value);
+                adjustTextareaHeight(e.target);
+              }}
+              onBlur={() => handleBlur()}
+              placeholder="Task description"
+              className="text-sm w-full outline-none resize-none break-words bg-transparent h-full"
+              style={{ color: bodyTextColor || textColor, overflowWrap: 'break-word', wordWrap: 'break-word' }}
+            />
+          ) : (
+            <p className="text-sm break-words h-full" style={{ color: bodyTextColor || textColor, overflowWrap: 'break-word', wordWrap: 'break-word' }} onClick={() => startEditing(columnIndex, taskIndex, 'description')}>
+              {task.description}
+            </p>
+          )}
+        </div>
+      </div>
+      <div className="absolute bottom-2 right-2 z-10">
+        <AnimatePresence mode="wait">
+          {(task.isNew || (editingTask.columnIndex === columnIndex && editingTask.taskIndex === taskIndex)) && (
+            <motion.div
+              key="save-button"
+              initial={{ opacity: 0, scale: 0.8 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.8 }}
+              transition={{ duration: 0.2 }}
+            >
+              <Button
+                variant="ghost"
+                className="px-2 py-0.5 text-xs h-6"
+                style={{ backgroundColor: buttonBg, color: textColor }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  saveTask(columnIndex, taskIndex);
+                }}
+              >
+                Save
+              </Button>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+    </div>
+  );
+}
+
 export function TaskManagerComponent() {
   const [columns, setColumns] = useState(initialColumns)
-  const [editingTask, setEditingTask] = useState<{ columnIndex: number, taskIndex: number } | null>(null)
+  const [editingTask, setEditingTask] = useState<{ columnIndex: number; taskIndex: number; field: 'title' | 'description' | null }>({ columnIndex: -1, taskIndex: -1, field: null })
   const titleInputRef = useRef<HTMLInputElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
+  const [newTaskKey, setNewTaskKey] = useState<number | null>(null);
+
   const addNewTask = (columnIndex: number) => {
-    const newColumns = [...columns]
+    const newKey = Date.now();
+    const newColumns = [...columns];
     newColumns[columnIndex].tasks.unshift({
       title: '',
       description: '',
-      time: '0h'
-    })
-    setColumns(newColumns)
-    setEditingTask({ columnIndex, taskIndex: 0 })
+      isNew: true,
+      key: newKey,
+      time: '' // Lägg till detta för att matcha Task-interfacet
+    } as Task); // Lägg till type assertion här
+    setColumns(newColumns);
+    setEditingTask({ columnIndex, taskIndex: 0, field: 'title' });
+    setNewTaskKey(newKey);
   }
 
   const updateTask = (columnIndex: number, taskIndex: number, field: 'title' | 'description', value: string) => {
@@ -86,22 +237,43 @@ export function TaskManagerComponent() {
   }
 
   const saveTask = (columnIndex: number, taskIndex: number) => {
-    setEditingTask(null)
-    // Här kan du lägga till ytterligare logik för att spara uppgiften om det behövs
+    const newColumns = [...columns];
+    const task = newColumns[columnIndex].tasks[taskIndex];
+    if ('isNew' in task) {
+      delete task.isNew;
+    }
+    setColumns(newColumns);
+    setEditingTask({ columnIndex: -1, taskIndex: -1, field: null });
+    setNewTaskKey(null);  // Add this line
   }
 
-  const adjustTextareaHeight = () => {
-    if (textareaRef.current) {
-      textareaRef.current.style.height = 'auto'
-      textareaRef.current.style.height = textareaRef.current.scrollHeight + 'px'
-    }
+  const startEditing = (columnIndex: number, taskIndex: number, field: 'title' | 'description') => {
+    setEditingTask({ columnIndex, taskIndex, field })
   }
+
+  const handleBlur = () => {
+    setEditingTask({ columnIndex: -1, taskIndex: -1, field: null })
+  }
+
+  const adjustTextareaHeight = (textarea: HTMLTextAreaElement) => {
+    textarea.style.height = 'auto'
+    textarea.style.height = `${textarea.scrollHeight}px`
+  }
+
+  const adjustInputHeight = (input: HTMLInputElement) => {
+    input.style.height = 'auto';
+    input.style.height = `${input.scrollHeight}px`;
+  };
 
   useEffect(() => {
-    if (editingTask && titleInputRef.current) {
-      titleInputRef.current.focus()
+    if (editingTask.field === 'title' && titleInputRef.current) {
+      titleInputRef.current.focus();
+      adjustInputHeight(titleInputRef.current);
+    } else if (editingTask.field === 'description' && textareaRef.current) {
+      textareaRef.current.focus();
+      adjustTextareaHeight(textareaRef.current);
     }
-  }, [editingTask])
+  }, [editingTask]);
 
   return (
     <div className={`py-8 ${bricolage.className}`}>
@@ -135,62 +307,54 @@ export function TaskManagerComponent() {
               </div>
               
               {/* Task Cards */}
-              {tasks.map((task, taskIndex) => (
-                <div key={taskIndex} className="bg-white rounded-xl p-3 mb-3">
-                  {editingTask?.columnIndex === columnIndex && editingTask?.taskIndex === taskIndex ? (
-                    <>
-                      <input
-                        ref={titleInputRef}
-                        type="text"
-                        value={task.title}
-                        onChange={(e) => updateTask(columnIndex, taskIndex, 'title', e.target.value)}
-                        className="text-xl font-bold mb-2 w-full outline-none break-words"
-                        style={{ color: textColor, overflowWrap: 'break-word', wordWrap: 'break-word' }}
-                        placeholder="Task Title"
+              {tasks.map((task, taskIndex) => {
+                const taskKey = 'key' in task ? task.key : taskIndex;
+                return (
+                  <React.Fragment key={taskKey}>
+                    {(taskKey === newTaskKey) ? (
+                      <AnimatedList>
+                        <AnimatedListItem>
+                          <TaskCard 
+                            task={task as Task} 
+                            columnIndex={columnIndex} 
+                            taskIndex={taskIndex}
+                            updateTask={updateTask}
+                            saveTask={saveTask}
+                            startEditing={startEditing}
+                            handleBlur={handleBlur}
+                            adjustTextareaHeight={adjustTextareaHeight}
+                            adjustInputHeight={adjustInputHeight}
+                            titleInputRef={titleInputRef}
+                            textareaRef={textareaRef}
+                            editingTask={editingTask}
+                            textColor={textColor}
+                            bodyTextColor={bodyTextColor}
+                            buttonBg={buttonBg}
+                          />
+                        </AnimatedListItem>
+                      </AnimatedList>
+                    ) : (
+                      <TaskCard 
+                        task={task as Task} 
+                        columnIndex={columnIndex} 
+                        taskIndex={taskIndex}
+                        updateTask={updateTask}
+                        saveTask={saveTask}
+                        startEditing={startEditing}
+                        handleBlur={handleBlur}
+                        adjustTextareaHeight={adjustTextareaHeight}
+                        adjustInputHeight={adjustInputHeight}
+                        titleInputRef={titleInputRef}
+                        textareaRef={textareaRef}
+                        editingTask={editingTask}
+                        textColor={textColor}
+                        bodyTextColor={bodyTextColor}
+                        buttonBg={buttonBg}
                       />
-                      <textarea
-                        ref={textareaRef}
-                        value={task.description}
-                        onChange={(e) => {
-                          updateTask(columnIndex, taskIndex, 'description', e.target.value)
-                          adjustTextareaHeight()
-                        }}
-                        onInput={adjustTextareaHeight}
-                        className="mb-3 text-sm w-full outline-none resize-none overflow-hidden break-words"
-                        style={{ color: bodyTextColor || textColor, overflowWrap: 'break-word', wordWrap: 'break-word' }}
-                        placeholder="Task Description"
-                        rows={1}
-                      />
-                      <div className="flex justify-between items-center mt-3">
-                        <button
-                          onClick={() => saveTask(columnIndex, taskIndex)}
-                          className="inline-block px-2 py-1 text-sm rounded"
-                          style={{ backgroundColor: buttonBg, color: textColor }}
-                        >
-                          Save task
-                        </button>
-                        <span className="inline-block px-2 py-1 text-sm rounded" style={{ backgroundColor: color, color: textColor }}>
-                          {task.time}
-                        </span>
-                      </div>
-                    </>
-                  ) : (
-                    <>
-                      {task.title && (
-                        <h2 className="text-xl font-bold mb-2 break-words" style={{ color: textColor, overflowWrap: 'break-word', wordWrap: 'break-word' }}>{task.title}</h2>
-                      )}
-                      <p className="mb-3 text-sm break-words" style={{ color: bodyTextColor || textColor, overflowWrap: 'break-word', wordWrap: 'break-word' }}>
-                        {task.description}
-                      </p>
-                      <div className="flex justify-end mt-2">
-                        <span className="inline-block px-2 py-1 text-sm rounded" style={{ backgroundColor: color, color: textColor }}>
-                          {task.time}
-                        </span>
-                      </div>
-                    </>
-                  )}
-                </div>
-              ))}
+                    )}
+                  </React.Fragment>
+                );
+              })}
             </div>
           </div>
         ))}

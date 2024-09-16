@@ -45,14 +45,14 @@ AnimatedList.displayName = "AnimatedList";
 
 export function AnimatedListItem({ children }: { children: React.ReactNode }) {
   const animations = {
-    initial: { scale: 0, opacity: 0 },
-    animate: { scale: 1, opacity: 1, originY: 0 },
-    exit: { scale: 0, opacity: 0 },
-    transition: { type: "spring", stiffness: 350, damping: 40 },
+    initial: { opacity: 0, height: 0 },
+    animate: { opacity: 1, height: 'auto' },
+    exit: { opacity: 0, height: 0 },
+    transition: { duration: 0.2 }
   };
 
   return (
-    <motion.div {...animations} layout className="mx-auto w-full">
+    <motion.div {...animations} layout className="mx-auto w-full overflow-hidden">
       {children}
     </motion.div>
   );
