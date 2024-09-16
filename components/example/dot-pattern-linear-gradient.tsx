@@ -16,7 +16,7 @@ const DotPatternDemo2 = () => {
         cy={1}
         cr={1}
         className={cn(
-          "[mask-image:linear-gradient(to_bottom_right,white,transparent,transparent)] ",
+          "[mask-image:linear-gradient(to_bottom_right,white,transparent_30%,transparent_70%,white)] ",
         )}
       />
     </div>
