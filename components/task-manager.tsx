@@ -2,15 +2,35 @@
 
 import React from 'react';  // Lägg till denna rad
 import { Button } from "@/components/ui/button"
-import { Plus } from "lucide-react"
+import { Plus, Check } from "lucide-react"
 import { Bricolage_Grotesque } from 'next/font/google'
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
 import { AnimatedList, AnimatedListItem } from "@/components/magicui/animated-list";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion, AnimatePresence, useAnimation } from "framer-motion";
+import { DndProvider, useDrag, useDrop } from 'react-dnd';
+import { HTML5Backend } from 'react-dnd-html5-backend';
 
 const bricolage = Bricolage_Grotesque({ subsets: ['latin'] })
 
-const initialColumns = [
+interface Task {
+  title: string;
+  description: string;
+  isNew?: boolean;
+  key: number;
+  time?: string;
+}
+
+interface Column {
+  title: string;
+  color: string;
+  buttonBg: string;
+  textColor: string;
+  bodyTextColor?: string;
+  icon: (color: string) => React.JSX.Element;
+  tasks: Task[];
+}
+
+const initialColumns: Column[] = [
   { 
     title: "To do", 
     color: '#F7F7F7', 
@@ -22,11 +42,11 @@ const initialColumns = [
       </svg>
     ),
     tasks: [
-      { title: "Design new landing page", description: "Create a modern and engaging landing page for our product launch. This should include responsive design, optimized images, and clear call-to-action buttons. Coordinate with the marketing team to ensure brand consistency and messaging alignment." },
-      { description: "Review and update the user guide for the latest software release. Focus on new features and any changes to existing functionality." },
-      { title: "Bug fix: login issue", description: "Investigate and resolve the intermittent login problem reported by users." },
-      { title: "Prepare Q3 report", description: "Compile and analyze data for the quarterly report. Include key performance indicators, revenue trends, and project milestones." },
-      { description: "Team meeting to discuss project priorities and resource allocation for the upcoming sprint." },
+      { title: "Design new landing page", description: "Create a modern and engaging landing page for our product launch. This should include responsive design, optimized images, and clear call-to-action buttons. Coordinate with the marketing team to ensure brand consistency and messaging alignment.", key: 1 },
+      { description: "Review and update the user guide for the latest software release. Focus on new features and any changes to existing functionality.", key: 2 },
+      { title: "Bug fix: login issue", description: "Investigate and resolve the intermittent login problem reported by users.", key: 3 },
+      { title: "Prepare Q3 report", description: "Compile and analyze data for the quarterly report. Include key performance indicators, revenue trends, and project milestones.", key: 4 },
+      { description: "Team meeting to discuss project priorities and resource allocation for the upcoming sprint.", key: 5 },
     ]
   },
   { 
@@ -40,9 +60,9 @@ const initialColumns = [
       </svg>
     ),
     tasks: [
-      { title: "Implement new feature", description: "Develop the new user profile customization feature as per the specifications. This includes adding new fields, implementing data validation, and ensuring proper database integration.", time: "6h" },
-      { description: "Ongoing code review for the payment gateway integration. Ensure security best practices are followed and performance optimizations are in place.", time: "2h" },
-      { title: "User testing", description: "Conduct user testing sessions for the beta version of the mobile app. Gather feedback and identify any usability issues or bugs.", time: "4h" },
+      { title: "Implement new feature", description: "Develop the new user profile customization feature as per the specifications. This includes adding new fields, implementing data validation, and ensuring proper database integration.", time: "6h", key: 6 },
+      { description: "Ongoing code review for the payment gateway integration. Ensure security best practices are followed and performance optimizations are in place.", time: "2h", key: 7 },
+      { title: "User testing", description: "Conduct user testing sessions for the beta version of the mobile app. Gather feedback and identify any usability issues or bugs.", time: "4h", key: 8 },
     ]
   },
   { 
@@ -57,22 +77,13 @@ const initialColumns = [
       </svg>
     ),
     tasks: [
-      { title: "Database optimization", description: "Optimized database queries for improved performance. Implemented indexing and query caching to reduce response times by 30%.", time: "5h" },
-      { description: "Completed the redesign of the user dashboard with new widgets and improved data visualization.", time: "8h" },
-      { title: "API documentation", description: "Updated API documentation for v2.0 release. Included new endpoints, request/response examples, and authentication details.", time: "3h" },
-      { title: "Security audit", description: "Conducted a comprehensive security audit of the application. Identified and addressed potential vulnerabilities in user authentication and data encryption.", time: "6h" },
+      { title: "Database optimization", description: "Optimized database queries for improved performance. Implemented indexing and query caching to reduce response times by 30%.", time: "5h", key: 9 },
+      { description: "Completed the redesign of the user dashboard with new widgets and improved data visualization.", time: "8h", key: 10 },
+      { title: "API documentation", description: "Updated API documentation for v2.0 release. Included new endpoints, request/response examples, and authentication details.", time: "3h", key: 11 },
+      { title: "Security audit", description: "Conducted a comprehensive security audit of the application. Identified and addressed potential vulnerabilities in user authentication and data encryption.", time: "6h", key: 12 },
     ]
   }
 ]
-
-// Lägg till dessa typdefinitioner i början av filen
-interface Task {
-  title: string;
-  description: string;
-  isNew?: boolean;
-  key?: number;
-  time?: string;
-}
 
 interface TaskCardProps {
   task: Task;
@@ -113,15 +124,16 @@ const item = {
 };
 
 const saveButtonAnimation = {
-  initial: { scale: 0.8, opacity: 0 },
-  animate: { scale: 1, opacity: 1 },
-  exit: { scale: 0.8, opacity: 0 },
-  transition: { duration: 0.2 }
+  initial: { opacity: 0, scale: 0.8 },
+  animate: { opacity: 1, scale: 1 },
+  exit: { opacity: 0, scale: 0.8 },
+  transition: { type: "spring", stiffness: 500, damping: 30 }
 };
 
-// Uppdatera TaskCard-funktionen för att använda den nya typen
 function TaskCard({ task, columnIndex, taskIndex, updateTask, saveTask, startEditing, handleBlur, adjustTextareaHeight, adjustInputHeight, titleInputRef, textareaRef, editingTask, textColor, bodyTextColor, buttonBg }: TaskCardProps) {
   const [cardHeight, setCardHeight] = useState<number | null>(null);
+  const buttonControls = useAnimation();
+  const [isSaved, setIsSaved] = useState(false);
 
   useEffect(() => {
     if (cardHeight === null) {
@@ -129,8 +141,35 @@ function TaskCard({ task, columnIndex, taskIndex, updateTask, saveTask, startEdi
     }
   }, [cardHeight, columnIndex, taskIndex]);
 
+  const handleSave = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    
+    setIsSaved(true);
+    
+    // Animate the checkmark
+    await buttonControls.start({
+      scale: [1, 1.2, 1],
+      transition: { duration: 0.5 }
+    });
+
+    // Fade out the save button
+    await buttonControls.start({
+      opacity: 0,
+      transition: { duration: 0.3 }
+    });
+
+    // Save the task and reset
+    saveTask(columnIndex, taskIndex);
+    setIsSaved(false);
+  };
+
   return (
-    <div 
+    <motion.div
+      layout
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: -20 }}
+      transition={{ type: 'spring', stiffness: 500, damping: 30 }}
       id={`task-card-${columnIndex}-${taskIndex}`}
       className="bg-white rounded-xl p-3 mb-3 flex flex-col relative"
       style={{ minHeight: cardHeight ? `${cardHeight}px` : '120px' }}
@@ -178,40 +217,105 @@ function TaskCard({ task, columnIndex, taskIndex, updateTask, saveTask, startEdi
           )}
         </div>
       </div>
-      <div className="absolute bottom-2 right-2 z-10">
-        <AnimatePresence mode="wait">
+      <div className="w-full flex justify-end" style={{ padding: '0.5rem' }}>
+        <AnimatePresence>
           {(task.isNew || (editingTask.columnIndex === columnIndex && editingTask.taskIndex === taskIndex)) && (
             <motion.div
               key="save-button"
-              initial={{ opacity: 0, scale: 0.8 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.8 }}
-              transition={{ duration: 0.2 }}
+              initial={{ opacity: 1 }}
+              animate={buttonControls}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.3 }}
             >
               <Button
                 variant="ghost"
-                className="px-2 py-0.5 text-xs h-6"
+                className="px-2 py-0.5 h-6 w-14"
                 style={{ backgroundColor: buttonBg, color: textColor }}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  saveTask(columnIndex, taskIndex);
-                }}
+                onClick={handleSave}
               >
-                Save
+                {isSaved ? (
+                  <Check className="h-3 w-3" />
+                ) : (
+                  <span className="text-xs">Save</span>
+                )}
               </Button>
             </motion.div>
           )}
         </AnimatePresence>
       </div>
-    </div>
+    </motion.div>
   );
 }
 
+const ItemTypes = {
+  TASK: 'task'
+};
+
+interface DraggableTaskCardProps extends TaskCardProps {
+  moveTask: (dragIndex: number, hoverIndex: number, sourceColumnIndex: number, targetColumnIndex: number, isBelow: boolean) => void;
+}
+
+const DraggableTaskCard: React.FC<DraggableTaskCardProps> = ({ task, columnIndex, taskIndex, moveTask, ...props }) => {
+  const ref = useRef<HTMLDivElement>(null);
+  const [{ isDragging }, drag] = useDrag({
+    type: ItemTypes.TASK,
+    item: () => ({ id: task.key, index: taskIndex, columnIndex }),
+    collect: (monitor) => ({
+      isDragging: monitor.isDragging(),
+    }),
+  });
+
+  drag(ref);
+
+  return (
+    <motion.div
+      ref={ref}
+      layout
+      transition={{
+        type: "spring",
+        stiffness: 600,
+        damping: 30
+      }}
+      style={{
+        opacity: isDragging ? 0.5 : 1,
+        cursor: 'move',
+        boxShadow: isDragging ? '0 5px 10px rgba(0,0,0,0.3)' : 'none',
+      }}
+    >
+      <TaskCard task={task} columnIndex={columnIndex} taskIndex={taskIndex} {...props} />
+    </motion.div>
+  );
+};
+
+const DropZone: React.FC<{ columnIndex: number; taskIndex: number; moveTask: (draggedItem: any, targetColumnIndex: number, targetTaskIndex: number) => void }> = ({ columnIndex, taskIndex, moveTask }) => {
+  const [{ isOver }, drop] = useDrop({
+    accept: ItemTypes.TASK,
+    drop: (item: { id: number; index: number; columnIndex: number }) => {
+      moveTask(item, columnIndex, taskIndex);
+    },
+    collect: (monitor) => ({
+      isOver: monitor.isOver(),
+    }),
+  });
+
+  return (
+    <div
+      ref={drop}
+      style={{
+        height: isOver ? '2rem' : '0.5rem',
+        transition: 'height 0.2s ease',
+        backgroundColor: isOver ? 'rgba(59, 130, 246, 0.5)' : 'transparent',
+        margin: '0.25rem 0',
+      }}
+    />
+  );
+};
+
 export function TaskManagerComponent() {
-  const [columns, setColumns] = useState(initialColumns)
-  const [editingTask, setEditingTask] = useState<{ columnIndex: number; taskIndex: number; field: 'title' | 'description' | null }>({ columnIndex: -1, taskIndex: -1, field: null })
-  const titleInputRef = useRef<HTMLInputElement>(null)
-  const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const [columns, setColumns] = useState<Column[]>(initialColumns);
+  const [editingTask, setEditingTask] = useState<{ columnIndex: number; taskIndex: number; field: 'title' | 'description' | null }>({ columnIndex: -1, taskIndex: -1, field: null });
+  const titleInputRef = useRef<HTMLInputElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const [newTaskKey, setNewTaskKey] = useState<number | null>(null);
 
@@ -223,8 +327,8 @@ export function TaskManagerComponent() {
       description: '',
       isNew: true,
       key: newKey,
-      time: '' // Lägg till detta för att matcha Task-interfacet
-    } as Task); // Lägg till type assertion här
+      time: ''
+    });
     setColumns(newColumns);
     setEditingTask({ columnIndex, taskIndex: 0, field: 'title' });
     setNewTaskKey(newKey);
@@ -275,69 +379,71 @@ export function TaskManagerComponent() {
     }
   }, [editingTask]);
 
+  const moveTask = useCallback((draggedItem: { id: number; index: number; columnIndex: number }, targetColumnIndex: number, targetTaskIndex: number) => {
+    setColumns((prevColumns) => {
+      const newColumns = [...prevColumns];
+      const sourceColumn = [...newColumns[draggedItem.columnIndex].tasks];
+      const targetColumn = [...newColumns[targetColumnIndex].tasks];
+      const [movedTask] = sourceColumn.splice(draggedItem.index, 1);
+      
+      if (draggedItem.columnIndex === targetColumnIndex) {
+        targetColumn.splice(targetTaskIndex, 0, movedTask);
+      } else {
+        if (targetTaskIndex === targetColumn.length) {
+          targetColumn.push(movedTask);
+        } else {
+          targetColumn.splice(targetTaskIndex, 0, movedTask);
+        }
+      }
+
+      newColumns[draggedItem.columnIndex] = { ...newColumns[draggedItem.columnIndex], tasks: sourceColumn };
+      newColumns[targetColumnIndex] = { ...newColumns[targetColumnIndex], tasks: targetColumn };
+
+      return newColumns;
+    });
+  }, []);
+
   return (
-    <div className={`py-8 ${bricolage.className}`}>
-      <div className="w-full mb-6 bg-[#F0F0F0] rounded-lg h-24 flex items-center">
-        <input
-          type="text"
-          placeholder="Board Title"
-          className="w-full px-6 text-3xl font-bold text-black bg-transparent outline-none placeholder-black"
-        />
-      </div>
-      <div className="flex flex-col sm:flex-row gap-6">
-        {columns.map(({ title, color, buttonBg, textColor, bodyTextColor, icon, tasks }, columnIndex) => (
-          <div key={columnIndex} className="flex-1 rounded-lg overflow-hidden" style={{ backgroundColor: color }}>
-            <div className="p-3">
-              <div className="flex justify-between items-center mb-3">
-                <div className="flex items-center">
-                  {icon(textColor)}
-                  <h2 className="text-base font-bold ml-2" style={{ color: textColor }}>{title}</h2>
-                </div>
-                <Button 
-                  variant="ghost" 
-                  className="hover:bg-opacity-80 rounded-full px-4 py-2 flex items-center"
-                  style={{ backgroundColor: buttonBg, color: textColor }}
-                  onClick={() => addNewTask(columnIndex)}
-                >
-                  <div className="w-6 h-6 rounded-full flex items-center justify-center mr-2 bg-white">
-                    <Plus className="h-4 w-4" style={{ color: textColor }} />
+    <DndProvider backend={HTML5Backend}>
+      <div className={`py-8 ${bricolage.className}`}>
+        <div className="w-full mb-6 bg-[#F7F7F7] rounded-lg h-24 flex items-center">
+          <input
+            type="text"
+            placeholder="Board Title"
+            className="w-full px-6 text-3xl font-bold text-black bg-transparent outline-none placeholder-black"
+          />
+        </div>
+        <div className="flex flex-col sm:flex-row gap-6">
+          {columns.map(({ title, color, buttonBg, textColor, bodyTextColor, icon, tasks }, columnIndex) => (
+            <div key={columnIndex} className="flex-1 rounded-lg overflow-hidden" style={{ backgroundColor: color }}>
+              <div className="p-3">
+                <div className="flex justify-between items-center mb-3">
+                  <div className="flex items-center">
+                    {icon(textColor)}
+                    <h2 className="text-base font-bold ml-2" style={{ color: textColor }}>{title}</h2>
                   </div>
-                  New Task
-                </Button>
-              </div>
-              
-              {/* Task Cards */}
-              {tasks.map((task, taskIndex) => {
-                const taskKey = 'key' in task ? task.key : taskIndex;
-                return (
-                  <React.Fragment key={taskKey}>
-                    {(taskKey === newTaskKey) ? (
-                      <AnimatedList>
-                        <AnimatedListItem>
-                          <TaskCard 
-                            task={task as Task} 
-                            columnIndex={columnIndex} 
-                            taskIndex={taskIndex}
-                            updateTask={updateTask}
-                            saveTask={saveTask}
-                            startEditing={startEditing}
-                            handleBlur={handleBlur}
-                            adjustTextareaHeight={adjustTextareaHeight}
-                            adjustInputHeight={adjustInputHeight}
-                            titleInputRef={titleInputRef}
-                            textareaRef={textareaRef}
-                            editingTask={editingTask}
-                            textColor={textColor}
-                            bodyTextColor={bodyTextColor}
-                            buttonBg={buttonBg}
-                          />
-                        </AnimatedListItem>
-                      </AnimatedList>
-                    ) : (
-                      <TaskCard 
-                        task={task as Task} 
-                        columnIndex={columnIndex} 
+                  <Button 
+                    variant="ghost" 
+                    className="hover:bg-opacity-80 rounded-full px-4 py-2 flex items-center"
+                    style={{ backgroundColor: buttonBg, color: textColor }}
+                    onClick={() => addNewTask(columnIndex)}
+                  >
+                    <div className="w-6 h-6 rounded-full flex items-center justify-center mr-2 bg-white">
+                      <Plus className="h-4 w-4" style={{ color: textColor }} />
+                    </div>
+                    New Task
+                  </Button>
+                </div>
+                
+                <AnimatePresence>
+                  <DropZone columnIndex={columnIndex} taskIndex={0} moveTask={moveTask} />
+                  {tasks.map((task, taskIndex) => (
+                    <React.Fragment key={task.key}>
+                      <DraggableTaskCard
+                        task={task}
+                        columnIndex={columnIndex}
                         taskIndex={taskIndex}
+                        moveTask={moveTask}
                         updateTask={updateTask}
                         saveTask={saveTask}
                         startEditing={startEditing}
@@ -351,14 +457,15 @@ export function TaskManagerComponent() {
                         bodyTextColor={bodyTextColor}
                         buttonBg={buttonBg}
                       />
-                    )}
-                  </React.Fragment>
-                );
-              })}
+                      <DropZone columnIndex={columnIndex} taskIndex={taskIndex + 1} moveTask={moveTask} />
+                    </React.Fragment>
+                  ))}
+                </AnimatePresence>
+              </div>
             </div>
-          </div>
-        ))}
+          ))}
+        </div>
       </div>
-    </div>
+    </DndProvider>
   )
 }
